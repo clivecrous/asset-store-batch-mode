@@ -408,14 +408,34 @@ public static class AssetStoreBatchMode
         var str1 = "Assets" + (localRootPath ?? string.Empty);
         var chars = new[] { (char)47 };
         var path1 = str1.Trim(chars);
-        var assetsItemArray = AssetServer.BuildExportPackageAssetListAssetsItems(AssetServer.CollectAllChildren(AssetDatabase.AssetPathToGUID(path1), new string[0]), true);
+        string[] guidArray = null;
+        AssetsItem[] assetsItemArray = null;
+        if (AssetServer.isPackager)
+        {
+            guidArray = AssetServer.BuildExportPackageAssetListGuids(AssetServer.CollectAllChildren(AssetDatabase.AssetPathToGUID(path1), new string[0]), true);
+        }
+        else
+        {
+            assetsItemArray = AssetServer.BuildExportPackageAssetListAssetsItems(AssetServer.CollectAllChildren(AssetDatabase.AssetPathToGUID(path1), new string[0]), true);
+        }
         var list = new List<string>();
         var str2 = path1.ToLower();
-        foreach (var assetsItem in assetsItemArray)
+        if (assetsItemArray != null)
         {
-            var str3 = AssetDatabase.GUIDToAssetPath(assetsItem.guid).ToLower();
-            if (str3.StartsWith("assets/plugins") || str3.Contains("standard assets") || str3.StartsWith(str2))
-                list.Add(assetsItem.guid);
+            foreach (var assetsItem in assetsItemArray)
+            {
+                var str3 = AssetDatabase.GUIDToAssetPath(assetsItem.guid).ToLower();
+                if (str3.StartsWith("assets/plugins") || str3.Contains("standard assets") || str3.StartsWith(str2))
+                    list.Add(assetsItem.guid);
+            }
+        } else
+        {
+            foreach (var guid in guidArray)
+            {
+                var str3 = AssetDatabase.GUIDToAssetPath(guid).ToLower();
+                if (str3.StartsWith("assets/plugins") || str3.Contains("standard assets") || str3.StartsWith(str2))
+                    list.Add(guid);
+            }
         }
         if (includeProjectSettings)
         {
@@ -633,16 +653,26 @@ internal class AssetServer : AssetStoreToolsReflectedType
 {
     static AssetServer s_Instance;
 
+    bool _isPackager = false;
+
     static AssetServer()
     {
         s_Instance = new AssetServer();
     }
 
+    public static bool isPackager {  get { return s_Instance._isPackager; } }
+
     private AssetServer()
     {
         var assembly = typeof(DebugUtils).Assembly;
-        SetRuntimeType(assembly.GetType("UnityEditor.AssetServer", true));
-    }
+        try {
+            SetRuntimeType(assembly.GetType("UnityEditor.AssetServer", true));
+        }
+        catch (TypeLoadException) {
+            SetRuntimeType(assembly.GetType("Packager", true));
+            _isPackager = true;
+        }
+     }
 
     public static string[] CollectAllChildren(string guid, string[] collection)
     {
@@ -653,6 +683,12 @@ internal class AssetServer : AssetStoreToolsReflectedType
     {
         return s_Instance.GetRuntimeType().Invoke<AssetsItem[]>("BuildExportPackageAssetListAssetsItems", guids.Param(), dependencies.Param());
     }
+
+    public static string[] BuildExportPackageAssetListGuids(string[] guids, bool dependencies)
+    {
+        return s_Instance.GetRuntimeType().Invoke<string[]>("BuildExportPackageAssetListGuids", guids.Param(), dependencies.Param());
+    }
+
     public static void ExportPackage(string[] guids, string path)
     {
         s_Instance.GetRuntimeType().Invoke("ExportPackage", guids.Param(), path.Param());
